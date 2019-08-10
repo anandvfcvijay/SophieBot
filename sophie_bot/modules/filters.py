@@ -1,8 +1,14 @@
 import re
 
-from aiogram.types.inline_keyboard import InlineKeyboardMarkup, InlineKeyboardButton
+import time as ttime
 
-from sophie_bot import decorator, mongodb, redis, WHITELISTED
+from aiogram import types
+from aiogram.types.inline_keyboard import InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.utils.callback_data import CallbackData
+from aiogram.dispatcher.filters.state import State, StatesGroup
+from aiogram.dispatcher import FSMContext
+
+from sophie_bot import WHITELISTED, decorator, mongodb, redis, dp, bot
 from sophie_bot.modules.connections import connection
 from sophie_bot.modules.disable import disablable_dec
 from sophie_bot.modules.language import get_string, get_strings_dec
@@ -10,6 +16,19 @@ from sophie_bot.modules.notes import send_note
 from sophie_bot.modules.bans import ban_user, kick_user, convert_time
 from sophie_bot.modules.users import user_admin_dec, user_link, get_chat_admins, user_link_html
 from sophie_bot.modules.warns import randomString
+
+
+# State
+class NewFilter(StatesGroup):
+    handler = State()
+    action = State()
+    time = State()
+    note = State()
+    reason = State()
+
+
+new_filter_cb = CallbackData('new_filter', 'action')
+new_filter_time_cb = CallbackData('select_filter_time', 'time')
 
 
 @decorator.AioBotDo()
@@ -149,6 +168,175 @@ async def add_filter(message, strings, status, chat_id, chat_title):
 
     update_handlers_cache(chat_id)
     await message.reply(text)
+
+
+@dp.callback_query_handler(regexp='cancel', state='*')
+async def cancel_handler(query, state):
+    await state.finish()
+    await bot.delete_message(query.message.chat.id, query.message.message_id)
+
+
+@decorator.command('addfilter')
+@connection()
+@get_strings_dec("filters")
+async def new_filter(message, strings, status, chat_id, chat_title):
+    print('oow')
+    await NewFilter.handler.set()
+    await message.reply("Please write keyword/key words.")
+
+
+@dp.message_handler(state=NewFilter.handler)
+async def add_filter_handler(message, state: FSMContext):
+    handler = message.text
+    async with state.proxy() as data:
+        data['chat_id'] = message.chat.id
+        data['handler'] = handler
+
+    await NewFilter.action.set()
+    text = f"Great! I will answer on \"<code>{handler}</code>\"."
+    text += "\nNow please select a action for this filter:"
+
+    buttons = InlineKeyboardMarkup(row_width=2).add(
+        InlineKeyboardButton(
+            "Send note", callback_data=new_filter_cb.new(action='note')),
+        InlineKeyboardButton(
+            "Answer on message", callback_data=new_filter_cb.new(action='answer')),
+        InlineKeyboardButton(
+            "Delete message", callback_data=new_filter_cb.new(action='delmsg')),
+        InlineKeyboardButton(
+            "Warn user", callback_data=new_filter_cb.new(action='warn')),
+        InlineKeyboardButton(
+            "Ban user", callback_data=new_filter_cb.new(action='ban')),
+        InlineKeyboardButton(
+            "Mute user", callback_data=new_filter_cb.new(action='mute')),
+        InlineKeyboardButton(
+            "Kick user", callback_data=new_filter_cb.new(action='kick')),
+    )
+
+    buttons.add(
+        InlineKeyboardButton("❗️ Exit", callback_data='cancel')
+    )
+
+    await message.reply(text, reply_markup=buttons)
+
+
+@dp.callback_query_handler(new_filter_cb.filter(), state=NewFilter.action)
+async def add_filter_action(query: types.CallbackQuery, callback_data: dict, state: FSMContext):
+    action = callback_data['action']
+    chat_id = query.message.chat.id
+    msg_id = query.message.message_id
+
+    async with state.proxy() as data:
+        data['action'] = action
+
+    tmp_actions = ('ban', 'mute')
+    actions_with_reason = ('warn')
+
+    if action in tmp_actions:
+
+        async with state.proxy() as data:
+            data['time_sel_msg'] = msg_id
+
+        await NewFilter.time.set()  # For manual select time
+
+        text = f"Great! On which time you wanna {action} user?"
+        text += "\nYou can also manually write time, for example write '2d'"
+        text += "\nOr select time by buttons below:"
+        buttons = InlineKeyboardMarkup(row_width=2).add(
+            InlineKeyboardButton(
+                "Forever", callback_data=new_filter_time_cb.new(time='False')),
+            InlineKeyboardButton(
+                "2 hours", callback_data=new_filter_time_cb.new(time='2')),
+            InlineKeyboardButton(
+                "5 hours", callback_data=new_filter_time_cb.new(time='5')),
+            InlineKeyboardButton(
+                "24 hours", callback_data=new_filter_time_cb.new(time='24')),
+            InlineKeyboardButton(
+                "2 days", callback_data=new_filter_time_cb.new(time='48')),
+            InlineKeyboardButton(
+                "1 week", callback_data=new_filter_time_cb.new(time='168'))
+        )
+
+        buttons.add(
+            InlineKeyboardButton("❗️ Exit", callback_data='cancel')
+        )
+
+        await bot.edit_message_text(text, chat_id, msg_id, reply_markup=buttons)
+        return
+
+    if action in actions_with_reason:
+        await NewFilter.reason.set()
+        text = "Great! Please write reason with which we will do this action."
+        await bot.edit_message_text(text, chat_id, msg_id)
+    elif action == 'note':
+        await NewFilter.note_name.set()
+        text = "Great! Please write notename."
+        await bot.edit_message_text(text, chat_id, msg_id)
+    else:
+        async with state.proxy() as data:
+            await add_new_filter(**data)
+            await filter_added(msg_id, edit=True, **data)
+            await state.finish()
+
+
+@dp.callback_query_handler(new_filter_time_cb.filter(), state=NewFilter.time)
+async def add_filter_time(query: types.CallbackQuery, callback_data: dict, state: FSMContext):
+    print('owo')
+    time = callback_data['time']
+    if time is not False:
+        # Convert hours to seconds
+        time = int(ttime.time() + int(time) * 60 * 60)
+    async with state.proxy() as data:
+        data['time'] = time
+        data['time_unit'] = 'hours'
+        await filter_added(query.message.message_id, edit=True, **data)
+        await state.finish()
+
+
+@dp.message_handler(state=NewFilter.time)
+async def add_filter_time_manual(message, state: FSMContext):
+    time, unit = await convert_time(message, message.text)
+    async with state.proxy() as data:
+        data['time'] = time
+        data['time_unit'] = unit
+        await filter_added(message.message_id, **data)
+        await state.finish()
+
+
+@dp.message_handler(state=NewFilter.reason)
+async def add_filter_reason(message, state: FSMContext):
+    reason = message.text
+    async with state.proxy() as data:
+        data['reason'] = reason
+        await add_new_filter(**data)
+        await filter_added(message.message_id, **data)
+        await state.finish()
+
+
+async def filter_added(msg_id, edit=False, **data):
+    text = "<b>Filter added!</b>"
+    text += f"\nHandler: <code>{data['handler']}</code>"
+    text += f"\nAction: <code>{data['action']}</code>"
+    if 'time' in data:
+        text += f"\nTime: on <code>{data['time']}</code> {data['time_unit']}"
+    if 'reason' in data:
+        text += "\nReason:\n<code>"
+        text += data['reason'] + "</code>"
+
+    chat_id = data['chat_id']
+    if edit is True:
+        await bot.edit_message_text(text, chat_id, msg_id)
+    else:
+        await bot.send_message(chat_id, text, reply_to_message_id=msg_id)
+
+
+async def add_new_filter(chat_id=None, handler=None, action=None, time=None, reason=None):
+    print(chat_id)
+    print(handler)
+    print(action)
+    print(time)
+    print(reason)
+    return True
 
 
 @decorator.command("filters")
