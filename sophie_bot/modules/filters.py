@@ -220,7 +220,7 @@ async def add_filter_handler(message, state: FSMContext):
     await message.reply(text, reply_markup=buttons)
 
 
-@dp.callback_query_handler(new_filter_cb.filter(), state=NewFilter.action)
+@dp.callback_query_handler(new_filter_cb.filter())
 async def add_filter_action(query: types.CallbackQuery, callback_data: dict, state: FSMContext):
     action = callback_data['action']
     chat_id = query.message.chat.id
@@ -244,17 +244,17 @@ async def add_filter_action(query: types.CallbackQuery, callback_data: dict, sta
         text += "\nOr select time by buttons below:"
         buttons = InlineKeyboardMarkup(row_width=2).add(
             InlineKeyboardButton(
-                "Forever", callback_data=new_filter_time_cb.new(time='False')),
+                "Forever", callback_data=new_filter_time_cb.new(time=False)),
             InlineKeyboardButton(
-                "2 hours", callback_data=new_filter_time_cb.new(time='2')),
+                "2 hours", callback_data=new_filter_time_cb.new(time='2h')),
             InlineKeyboardButton(
-                "5 hours", callback_data=new_filter_time_cb.new(time='5')),
+                "5 hours", callback_data=new_filter_time_cb.new(time='5h')),
             InlineKeyboardButton(
-                "24 hours", callback_data=new_filter_time_cb.new(time='24')),
+                "24 hours", callback_data=new_filter_time_cb.new(time='24h')),
             InlineKeyboardButton(
-                "2 days", callback_data=new_filter_time_cb.new(time='48')),
+                "2 days", callback_data=new_filter_time_cb.new(time='2d')),
             InlineKeyboardButton(
-                "1 week", callback_data=new_filter_time_cb.new(time='168'))
+                "1 week", callback_data=new_filter_time_cb.new(time='7d'))
         )
 
         buttons.add(
@@ -279,26 +279,25 @@ async def add_filter_action(query: types.CallbackQuery, callback_data: dict, sta
             await state.finish()
 
 
-@dp.callback_query_handler(new_filter_time_cb.filter(), state=NewFilter.time)
+@dp.callback_query_handler(new_filter_time_cb.filter())
 async def add_filter_time(query: types.CallbackQuery, callback_data: dict, state: FSMContext):
-    print('owo')
     time = callback_data['time']
-    if time is not False:
-        # Convert hours to seconds
-        time = int(ttime.time() + int(time) * 60 * 60)
     async with state.proxy() as data:
         data['time'] = time
-        data['time_unit'] = 'hours'
         await filter_added(query.message.message_id, edit=True, **data)
         await state.finish()
 
 
 @dp.message_handler(state=NewFilter.time)
 async def add_filter_time_manual(message, state: FSMContext):
-    time, unit = await convert_time(message, message.text)
+    text = message.text
+    if not any(text.endswith(unit) for unit in ('m', 'h', 'd')):
+        text = "Time value isn't valid!"
+        await bot.send_message(message.chat.id, text, reply_to_message_id=message.message_id)
+        await state.finish()
+        return
     async with state.proxy() as data:
-        data['time'] = time
-        data['time_unit'] = unit
+        data['time'] = text
         await filter_added(message.message_id, **data)
         await state.finish()
 
@@ -317,8 +316,8 @@ async def filter_added(msg_id, edit=False, **data):
     text = "<b>Filter added!</b>"
     text += f"\nHandler: <code>{data['handler']}</code>"
     text += f"\nAction: <code>{data['action']}</code>"
-    if 'time' in data:
-        text += f"\nTime: on <code>{data['time']}</code> {data['time_unit']}"
+    if 'time' in data and not data['time'] == 'False':
+        text += f"\nTime: on <code>{data['time']}</code>"
     if 'reason' in data:
         text += "\nReason:\n<code>"
         text += data['reason'] + "</code>"
