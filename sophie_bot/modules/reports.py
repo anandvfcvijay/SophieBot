@@ -57,7 +57,7 @@ async def report_user(message, strings, status, chat_id, chat_title):
     if from_id in WHITELISTED:
         return await message.reply(strings['user_is_whitelisted'])
 
-    user, text = 
+    user, text = aio_get_user(message)
 
     if not user:
         return await message.reply(strings['no_user_to_report'])

@@ -298,31 +298,34 @@ async def aio_get_user(message, send_text=True, allow_self=False):
         if mention == args[1]:
             if len(args) > 2:
                 text = args[2]
-            return await get_user_by_username(mention), text
-
-    # Ok, now we really be unsure, so don't return right away
-    if len(args) > 1:
-        if args[1].isdigit():
-            user = await get_user_by_id(args[1])
-
-        # Admin can mess a @
-        if not user:
-            user = await get_user_by_username(args[1])
-
-    if len(args) > 2:
-        text = args[2]
-
-    # Not first because ex. admins can /warn (user) and reply to offended user
-    if not user and "reply_to_message" in message:
-        if len(args) > 1:
-            text = message.get_args()
-        return await get_user_by_id(message.reply_to_message.from_user.id), text
-
-    if not user and allow_self is True:
-        user = await get_user_by_id(message.from_user.id)
+            user = await get_user_by_username(mention), text
 
     if not user:
-        await message.answer('I can\'t get this user!')
+        # Ok, now we really be unsure, so don't return right away
+        if len(args) > 1:
+            if args[1].isdigit():
+                user = await get_user_by_id(args[1])
+
+            # Admin can mess a @
+            if not user:
+                user = await get_user_by_username(args[1])
+
+        if len(args) > 2:
+            text = args[2]
+
+        # Not first because ex. admins can /warn (user) and reply to offended user
+        if not user and "reply_to_message" in message:
+            if len(args) > 1:
+                text = message.get_args()
+            return await get_user_by_id(message.reply_to_message.from_user.id), text
+
+        if not user and allow_self is True:
+            user = await get_user_by_id(message.from_user.id)
+
+    if not user and send_text is True:
+        await message.answer('I cant get the user!')
+        return None, None
+    elif not user:
         return None, None
 
     return user, text
