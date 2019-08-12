@@ -1,7 +1,5 @@
 import re
 
-import time as ttime
-
 from aiogram import types
 from aiogram.types.inline_keyboard import InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.utils.callback_data import CallbackData
@@ -23,7 +21,7 @@ class NewFilter(StatesGroup):
     handler = State()
     action = State()
     time = State()
-    note = State()
+    note_name = State()
     reason = State()
 
 
@@ -233,38 +231,8 @@ async def add_filter_action(query: types.CallbackQuery, callback_data: dict, sta
     actions_with_reason = ('warn')
 
     if action in tmp_actions:
-
-        async with state.proxy() as data:
-            data['time_sel_msg'] = msg_id
-
-        await NewFilter.time.set()  # For manual select time
-
-        text = f"Great! On which time you wanna {action} user?"
-        text += "\nYou can also manually write time, for example write '2d'"
-        text += "\nOr select time by buttons below:"
-        buttons = InlineKeyboardMarkup(row_width=2).add(
-            InlineKeyboardButton(
-                "Forever", callback_data=new_filter_time_cb.new(time=False)),
-            InlineKeyboardButton(
-                "2 hours", callback_data=new_filter_time_cb.new(time='2h')),
-            InlineKeyboardButton(
-                "5 hours", callback_data=new_filter_time_cb.new(time='5h')),
-            InlineKeyboardButton(
-                "24 hours", callback_data=new_filter_time_cb.new(time='24h')),
-            InlineKeyboardButton(
-                "2 days", callback_data=new_filter_time_cb.new(time='2d')),
-            InlineKeyboardButton(
-                "1 week", callback_data=new_filter_time_cb.new(time='7d'))
-        )
-
-        buttons.add(
-            InlineKeyboardButton("❗️ Exit", callback_data='cancel')
-        )
-
-        await bot.edit_message_text(text, chat_id, msg_id, reply_markup=buttons)
-        return
-
-    if action in actions_with_reason:
+        await select_time(state, action, chat_id, msg_id)
+    elif action in actions_with_reason:
         await NewFilter.reason.set()
         text = "Great! Please write reason with which we will do this action."
         await bot.edit_message_text(text, chat_id, msg_id)
@@ -277,6 +245,38 @@ async def add_filter_action(query: types.CallbackQuery, callback_data: dict, sta
             await add_new_filter(**data)
             await filter_added(msg_id, edit=True, **data)
             await state.finish()
+
+
+async def select_time(state, action, chat_id, msg_id):
+    async with state.proxy() as data:
+        data['time_sel_msg'] = msg_id
+
+    await NewFilter.time.set()  # For manual select time
+
+    text = f"Great! On which time you wanna {action} user?"
+    text += "\nYou can also manually write time, for example write '2d'"
+    text += "\nOr select time by buttons below:"
+    buttons = InlineKeyboardMarkup(row_width=2).add(
+        InlineKeyboardButton(
+            "Forever", callback_data=new_filter_time_cb.new(time=False)),
+        InlineKeyboardButton(
+            "2 hours", callback_data=new_filter_time_cb.new(time='2h')),
+        InlineKeyboardButton(
+            "5 hours", callback_data=new_filter_time_cb.new(time='5h')),
+        InlineKeyboardButton(
+            "24 hours", callback_data=new_filter_time_cb.new(time='24h')),
+        InlineKeyboardButton(
+            "2 days", callback_data=new_filter_time_cb.new(time='2d')),
+        InlineKeyboardButton(
+            "1 week", callback_data=new_filter_time_cb.new(time='7d'))
+    )
+
+    buttons.add(
+        InlineKeyboardButton("❗️ Exit", callback_data='cancel')
+    )
+
+    await bot.edit_message_text(text, chat_id, msg_id, reply_markup=buttons)
+    return
 
 
 @dp.callback_query_handler(new_filter_time_cb.filter())
@@ -312,12 +312,24 @@ async def add_filter_reason(message, state: FSMContext):
         await state.finish()
 
 
+@dp.message_handler(state=NewFilter.note_name)
+async def add_filter_note(message, state: FSMContext):
+    note_name = message.text
+    async with state.proxy() as data:
+        data['note_name'] = note_name
+        await add_new_filter(**data)
+        await filter_added(message.message_id, **data)
+        await state.finish()
+
+
 async def filter_added(msg_id, edit=False, **data):
     text = "<b>Filter added!</b>"
     text += f"\nHandler: <code>{data['handler']}</code>"
     text += f"\nAction: <code>{data['action']}</code>"
     if 'time' in data and not data['time'] == 'False':
         text += f"\nTime: on <code>{data['time']}</code>"
+    if 'note_name' in data:
+        text += f"\nNote: <code>{data['note_name']}</code>"
     if 'reason' in data:
         text += "\nReason:\n<code>"
         text += data['reason'] + "</code>"
@@ -329,12 +341,8 @@ async def filter_added(msg_id, edit=False, **data):
         await bot.send_message(chat_id, text, reply_to_message_id=msg_id)
 
 
-async def add_new_filter(chat_id=None, handler=None, action=None, time=None, reason=None):
-    print(chat_id)
-    print(handler)
-    print(action)
-    print(time)
-    print(reason)
+async def add_new_filter(**kwargs):
+    print(kwargs)
     return True
 
 
