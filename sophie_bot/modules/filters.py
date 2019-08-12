@@ -184,53 +184,113 @@ async def new_filter(message, strings, status, chat_id, chat_title):
 
 
 @dp.message_handler(state=NewFilter.handler)
-async def add_filter_handler(message, state: FSMContext):
+@dp.callback_query_handler(regexp='add_filter_actions', state='*')
+@dp.callback_query_handler(regexp='add_filter_multiple_actions', state='*')
+async def add_filter_handler(message, state: FSMContext, multiple=False, edit=False):
+    if 'message' in message:
+        query = message
+        message = message.message
+        edit = message.message_id
+        if query.data == 'add_filter_multiple_actions':
+            multiple = True
+
     handler = message.text
+    chat_id = message.chat.id
     async with state.proxy() as data:
-        data['chat_id'] = message.chat.id
-        data['handler'] = handler
+        data['chat_id'] = chat_id
+        if 'handler' in data:
+            handler = data['handler']
+        else:
+            data['handler'] = handler
 
     await NewFilter.action.set()
     text = f"Great! I will answer on \"<code>{handler}</code>\"."
     text += "\nNow please select a action for this filter:"
 
-    buttons = InlineKeyboardMarkup(row_width=2).add(
-        InlineKeyboardButton(
-            "Send note", callback_data=new_filter_cb.new(action='note')),
-        InlineKeyboardButton(
-            "Answer on message", callback_data=new_filter_cb.new(action='answer')),
-        InlineKeyboardButton(
-            "Delete message", callback_data=new_filter_cb.new(action='delmsg')),
-        InlineKeyboardButton(
-            "Warn user", callback_data=new_filter_cb.new(action='warn')),
-        InlineKeyboardButton(
-            "Ban user", callback_data=new_filter_cb.new(action='ban')),
-        InlineKeyboardButton(
-            "Mute user", callback_data=new_filter_cb.new(action='mute')),
-        InlineKeyboardButton(
-            "Kick user", callback_data=new_filter_cb.new(action='kick')),
-    )
+    buttons = InlineKeyboardMarkup(row_width=2)
+
+    if multiple is False:
+        buttons.add(
+            InlineKeyboardButton(
+                "Send note",
+                callback_data=new_filter_cb.new(action='note')),
+            InlineKeyboardButton(
+                "Answer on message",
+                callback_data=new_filter_cb.new(action='answer')),
+            InlineKeyboardButton(
+                "Delete message",
+                callback_data=new_filter_cb.new(action='delmsg')),
+            InlineKeyboardButton(
+                "Warn user",
+                callback_data=new_filter_cb.new(action='warn')),
+            InlineKeyboardButton(
+                "Ban user",
+                callback_data=new_filter_cb.new(action='ban')),
+            InlineKeyboardButton(
+                "Mute user",
+                callback_data=new_filter_cb.new(action='mute')),
+            InlineKeyboardButton(
+                "Kick user",
+                callback_data=new_filter_cb.new(action='kick')),
+        )
+
+        buttons.add(
+            InlineKeyboardButton("➕ Multiple actions", callback_data='add_filter_multiple_actions')
+        )
+
+    else:
+        buttons.add(
+            InlineKeyboardButton(
+                "Delete message + Send note",
+                callback_data=new_filter_cb.new(action='delmsg+note')),
+            InlineKeyboardButton(
+                "Delete message + Answer",
+                callback_data=new_filter_cb.new(action='delmsg+answer')),
+            InlineKeyboardButton(
+                "Delete message + Kick user",
+                callback_data=new_filter_cb.new(action='delmsg+kick')),
+            InlineKeyboardButton(
+                "Delete message + Warn user",
+                callback_data=new_filter_cb.new(action='delmsg+warn')),
+            InlineKeyboardButton(
+                "Delete message + Mute user",
+                callback_data=new_filter_cb.new(action='delmsg+mute')),
+            InlineKeyboardButton(
+                "Delete message + Ban user",
+                callback_data=new_filter_cb.new(action='delmsg+ban'))
+        )
+
+        buttons.add(
+            InlineKeyboardButton("◀️ Back", callback_data='add_filter_actions')
+        )
 
     buttons.add(
         InlineKeyboardButton("❗️ Exit", callback_data='cancel')
     )
 
-    await message.reply(text, reply_markup=buttons)
+    if edit is False:
+        await message.reply(text, reply_markup=buttons)
+    else:
+        await bot.edit_message_text(text, chat_id, edit, reply_markup=buttons)
 
 
-@dp.callback_query_handler(new_filter_cb.filter())
+@dp.callback_query_handler(new_filter_cb.filter(), state='*')
 async def add_filter_action(query: types.CallbackQuery, callback_data: dict, state: FSMContext):
     action = callback_data['action']
+    if '+' in action:
+        print('--------------')
+        action = action.split("+", 1)
+        action = action[1]
     chat_id = query.message.chat.id
     msg_id = query.message.message_id
 
     async with state.proxy() as data:
-        data['action'] = action
+        data['action'] = callback_data['action']
 
-    tmp_actions = ('ban', 'mute')
+    actions_with_timer = ('ban', 'mute')
     actions_with_reason = ('warn')
 
-    if action in tmp_actions:
+    if action in actions_with_timer:
         await select_time(state, action, chat_id, msg_id)
     elif action in actions_with_reason:
         await NewFilter.reason.set()
@@ -272,6 +332,10 @@ async def select_time(state, action, chat_id, msg_id):
     )
 
     buttons.add(
+        InlineKeyboardButton("◀️ Back", callback_data='add_filter_actions')
+    )
+
+    buttons.add(
         InlineKeyboardButton("❗️ Exit", callback_data='cancel')
     )
 
@@ -279,7 +343,7 @@ async def select_time(state, action, chat_id, msg_id):
     return
 
 
-@dp.callback_query_handler(new_filter_time_cb.filter())
+@dp.callback_query_handler(new_filter_time_cb.filter(), state='*')
 async def add_filter_time(query: types.CallbackQuery, callback_data: dict, state: FSMContext):
     time = callback_data['time']
     async with state.proxy() as data:
