@@ -1,13 +1,13 @@
 {"basic":{
-    "app_id": "APP_ID",
-    "app_hash": "APP_HASH",
-    "bot_token": "BOT_TOKEN",
+    "app_id": "578164",
+    "app_hash": "922dfb0b0defd34f056beb195bd26ef8",
+    "bot_token": "742966038:AAHM_MkqKhIryLRwBq-Haqp-kIZU4tI2We8",
 
-    "owner_id": "YOUR_ID",
+    "owner_id": "646146866",
     "mongo_port": "27017",
-    "mongo_conn": "localhost",
+    "mongo_server": "localhost",
 
-    "redis_conn": "localhost",
+    "redis_server": "localhost",
     "redis_port": 6379
 },
  "advanced":{
